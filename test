@@ -1,0 +1,654 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_easyloading/flutter_easyloading.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:jammer_watch/utils/log/log_util.dart';
+import 'package:jammer_watch/views/home.dart';
+import 'package:jammer_watch/views/setting/pages/language/language_provider.dart';
+import 'package:jammer_watch/views/setting/pages/language_sele.dart';
+import 'generated/l10n.dart';
+import 'gun/gun_manager.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await init();
+  runApp(const ProviderScope(child: GunApp()));
+}
+
+Future<void> init() async {
+  await Log.initFileLog();
+  await GunManager().initLocale();
+}
+
+class GunApp extends StatelessWidget {
+  const GunApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenUtilInit(
+      designSize: const Size(1280, 720),
+      minTextAdapt: true,
+      builder: (context, child) {
+        return child!;
+      },
+      child: Consumer(
+        builder: (_, ref, child) {
+          final locales = ref.watch(languageProvider).currentLocal;
+          return MaterialApp(
+            builder: EasyLoading.init(),
+            debugShowCheckedModeBanner: true,
+            localizationsDelegates: const [
+              S.delegate,
+              GlobalMaterialLocalizations.delegate, 
+              GlobalCupertinoLocalizations.delegate, 
+              GlobalWidgetsLocalizations.delegate 
+            ],
+            supportedLocales: S.delegate.supportedLocales,
+            locale: locales,
+            home: child,
+          );
+        },
+        child: firstInstallWidget(),
+      ),
+    );
+  }
+
+  Widget firstInstallWidget() {
+    return Consumer(
+      builder: (BuildContext context, WidgetRef ref, Widget? child) {
+        final currentLocal = ref.read(languageProvider).currentLocal;
+        if (currentLocal == null) {
+          return const LanguageSettingPage();
+        } else {
+          return const MainPage();
+        }
+      },
+    );
+  }
+}
+
+
+
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:jammer_watch/views/fight/topbar_two_widget.dart';
+import 'package:jammer_watch/views/setting/pages/screen_off_provider.dart';
+import 'package:jammer_watch/views/widgets/flicker_animation.dart';
+import '../gun/provider/alarm_provider.dart';
+import 'drone_list_widget.dart';
+import 'mode/detection/detection_page_new.dart';
+
+class MainPage extends StatelessWidget {
+  const MainPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      drawer: Drawer(
+        width: 1100.w,
+        backgroundColor: Colors.transparent,
+
+        child: const DroneListWidget(),
+      ),
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              SizedBox(
+                height: 140.h,
+
+                child: const TopBarTwoWidget(),
+              ),
+              const Expanded(
+                child: DetectionPageNew(),
+              )
+            ],
+          ),
+          Consumer(builder: (_, ref, __) {
+            final isAlarm = ref.watch(alarmProvider).isAlarm;
+            if (isAlarm) {
+              return const IgnorePointer(child: FlickerAnimation());
+            } else {
+              return const SizedBox.shrink();
+            }
+          }),
+          Consumer(builder: (_, ref, __) {
+            bool isDark = ref.watch(screenOffProvider).screenOffStatus;
+            if (isDark) {
+              return InkWell(
+                onTap: () {
+                  ref.read(screenOffProvider).screenOn();
+                },
+                child: Container(
+                  color: Colors.black,
+                  width: MediaQuery.of(context).size.width,
+                  height: MediaQuery.of(context).size.height,
+                ),
+              );
+            } else {
+              return const SizedBox.shrink();
+            }
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+
+import '../common/widget/image_widget.dart';
+import '../gun/proto/def/remote_id.dart';
+import 'mode/detection/drone_position_list_provider.dart';
+
+class DroneListWidget extends StatelessWidget {
+  const DroneListWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(left: 54.w, bottom: 40.w),
+      decoration: BoxDecoration(
+        color: const Color(0xFF232526),
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(64.r)),
+      ),
+      child: Column(children: [
+        SizedBox(height: 50.h),
+        _buildTableHeader(),
+        SizedBox(height: 40.h),
+        Expanded(child: _buildDroneList()),
+      ]),
+    );
+  }
+
+  Widget _buildTableHeader() {
+    return Consumer(builder: (context, ref, _) {
+      bool c2State = ref.watch(dronePositionListProvider).c2State;
+      final List<RemoteId> list =
+          ref.watch(dronePositionListProvider).droneList;
+      return Row(
+        children: [
+          _buildHeaderItem(list.isEmpty ? 2 : 5, "Drone"),
+          _buildHeaderItem(2, c2State ? "Altitude" : "Azimuth"),
+          // _buildHeaderItem(2, c2State ? "velocity" : "EL"),
+          _buildHeaderItem(list.isEmpty ? 2 : 3, "Frequency", size: 42),
+        ],
+      );
+    });
+  }
+
+  Widget _buildHeaderItem(flex, String itemIcon, {double size = 56}) {
+    return Expanded(
+      flex: flex,
+      child: Center(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            Text(
+              itemIcon,
+              style: TextStyle(color: const Color(0x9affffff), fontSize: 34.sp),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDroneList() {
+    return Consumer(builder: (context, ref, _) {
+      final List<RemoteId> list =
+          ref.watch(dronePositionListProvider).droneList;
+      return ListView.separated(
+        shrinkWrap: true,
+        itemBuilder: (ctx, index) {
+          return _buildDroneItem(context, list[index]);
+        },
+        separatorBuilder: (_, __) => Divider(
+          color: const Color(0x50ffffff),
+          height: 88.h,
+        ),
+        itemCount: list.length,
+      );
+    });
+  }
+
+  Widget _buildDroneItem(BuildContext context, RemoteId droneInfo) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          _buildDroneRow(
+            droneInfo.getDroneName(),
+            flex: 5,
+            paraIcon: 'droneRed',
+          ),
+          _buildDroneRow(droneInfo.getDroneHorizonUnit(), flex: 2),
+          // _buildDroneRow(droneInfo.getDronePitch(), flex: 2),
+          _buildDroneRow(droneInfo.getUFreqStr(), flex: 3),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDroneRow(String paramName, {String? paraIcon, int flex = 1}) {
+    return Expanded(
+      flex: flex,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          if (paraIcon != null) ...[
+            ImageWidget.svg(
+              paraIcon,
+              width: 48.w,
+              height: 48.w,
+            ),
+            SizedBox(width: 24.w)
+          ],
+          Text(
+            paramName,
+            style: TextStyle(fontSize: 48.sp, color: Colors.white),
+          )
+        ],
+      ),
+    );
+  }
+}
+
+
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+
+import '../common/widget/image_widget.dart';
+import '../gun/proto/def/remote_id.dart';
+import 'mode/detection/drone_position_list_provider.dart';
+
+class DroneListWidget extends StatelessWidget {
+  const DroneListWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(left: 54.w, bottom: 40.w),
+      decoration: BoxDecoration(
+        color: const Color(0xFF232526),
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(64.r)),
+      ),
+      child: Column(children: [
+        SizedBox(height: 50.h),
+        _buildTableHeader(),
+        SizedBox(height: 40.h),
+        Expanded(child: _buildDroneList()),
+      ]),
+    );
+  }
+
+  Widget _buildTableHeader() {
+    return Consumer(builder: (context, ref, _) {
+      bool c2State = ref.watch(dronePositionListProvider).c2State;
+      final List<RemoteId> list =
+          ref.watch(dronePositionListProvider).droneList;
+      return Row(
+        children: [
+          _buildHeaderItem(list.isEmpty ? 2 : 5, "Drone"),
+          _buildHeaderItem(2, c2State ? "Altitude" : "Azimuth"),
+          // _buildHeaderItem(2, c2State ? "velocity" : "EL"),
+          _buildHeaderItem(list.isEmpty ? 2 : 3, "Frequency", size: 42),
+        ],
+      );
+    });
+  }
+
+  Widget _buildHeaderItem(flex, String itemIcon, {double size = 56}) {
+    return Expanded(
+      flex: flex,
+      child: Center(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            Text(
+              itemIcon,
+              style: TextStyle(color: const Color(0x9affffff), fontSize: 34.sp),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDroneList() {
+    return Consumer(builder: (context, ref, _) {
+      final List<RemoteId> list =
+          ref.watch(dronePositionListProvider).droneList;
+      return ListView.separated(
+        shrinkWrap: true,
+        itemBuilder: (ctx, index) {
+          return _buildDroneItem(context, list[index]);
+        },
+        separatorBuilder: (_, __) => Divider(
+          color: const Color(0x50ffffff),
+          height: 88.h,
+        ),
+        itemCount: list.length,
+      );
+    });
+  }
+
+  Widget _buildDroneItem(BuildContext context, RemoteId droneInfo) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          //C2传过来的无人机显示objId
+          _buildDroneRow(
+            droneInfo.getDroneName(),
+            flex: 5,
+            paraIcon: 'droneRed',
+          ),
+          _buildDroneRow(droneInfo.getDroneHorizonUnit(), flex: 2),
+          // _buildDroneRow(droneInfo.getDronePitch(), flex: 2),
+          _buildDroneRow(droneInfo.getUFreqStr(), flex: 3),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDroneRow(String paramName, {String? paraIcon, int flex = 1}) {
+    return Expanded(
+      flex: flex,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          if (paraIcon != null) ...[
+            ImageWidget.svg(
+              paraIcon,
+              width: 48.w,
+              height: 48.w,
+            ),
+            SizedBox(width: 24.w)
+          ],
+          Text(
+            paramName,
+            style: TextStyle(fontSize: 48.sp, color: Colors.white),
+          )
+        ],
+      ),
+    );
+  }
+}
+
+
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:jammer_watch/common/widget/image_widget.dart';
+import 'package:jammer_watch/views/mode/detection/work_mode_widget.dart';
+import 'drone_pitch_widget.dart';
+import 'compass_widget.dart';
+
+class DetectionPageNew extends StatelessWidget {
+  const DetectionPageNew({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          flex: 1, //平分屏幕
+          child: Container(
+            margin: EdgeInsets.only(left: 64.w, bottom: 24.h),
+            child: Stack(
+              children: [
+                ///罗盘刻度widget
+                const Positioned(
+                  top: 0,
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Center(child: CompassWidget()),
+                ),
+
+                ///俯仰瞄准widget
+                const Positioned(
+                  top: 0,
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Center(child: DronePitchWidget()),
+                ),
+
+                ///瞄准区域
+                Positioned(
+                  top: 4.h,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: ImageWidget.image(
+                      'scan2',
+                      height: 148.h,
+                      width: 189.w,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const Expanded(
+          flex: 1, //平分屏幕
+
+          ///右侧无人机和打击详情信息
+          child: WorkModeWidget(),
+        ),
+      ],
+    );
+  }
+}
+
+
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:jammer_watch/views/factoryTest/factory_workmode_provider.dart';
+
+import '../../../common/widget/image_widget.dart';
+import '../../factoryTest/factory_compass_provider.dart';
+import '../../widgets/half_circle_ring_painter.dart';
+import '../../widgets/turn_box.dart';
+import 'drone_position_list_provider.dart';
+
+class CompassWidget extends ConsumerWidget {
+  const CompassWidget({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final turns = ref.watch(factoryCompassProvider).turns;
+    final start = ref.watch(factoryCompassProvider).startAngle;
+    final end = ref.watch(factoryCompassProvider).endAngle;
+    final mode = ref.watch(factoryWorkModeProvider).workMode;
+
+    final list = ref.watch(dronePositionListProvider).list;
+    final size = 560.r;
+
+    return TurnBox(
+      turns: turns,
+      speed: 200,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          ImageWidget.image(
+            "compassTwo",
+            width: 560.w,
+            height: 560.w,
+          ),
+          if (mode == 5)
+            CustomPaint(
+              painter: HalfCircleRingPainter(start, end, size),
+              size: Size(size, size),
+            ),
+          ...dronePosition(list),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> dronePosition(List<DronePosition> positionList) {
+    List<Widget> list = [];
+    for (int i = 0; i < positionList.length; i++) {
+      list.add(Positioned(
+        top: positionList[i].top.h,
+        left: positionList[i].left.w,
+        child: ImageWidget.svg(
+          i.isEven ? 'droneRed' : 'dronePink', //i是否为偶数
+          width: 46.w,
+          height: 46.w,
+        ),
+      ));
+    }
+    return list;
+  }
+}
+
+
+import 'package:flutter/material.dart';
+
+const double borderHeight = 65;
+const double borderWidth = 105;
+const List<Color> colors = [Colors.red, Colors.transparent];
+
+class FlickerAnimation extends StatefulWidget {
+  const FlickerAnimation({super.key});
+
+  @override
+  State<StatefulWidget> createState() {
+    return _FlickerAnimation();
+  }
+}
+
+class _FlickerAnimation extends State<FlickerAnimation>
+    with TickerProviderStateMixin {
+  late AnimationController controller;
+  late Animation<double> animation;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = AnimationController(
+        duration: const Duration(milliseconds: 500), vsync: this);
+    animation = Tween<double>(
+      begin: 0,
+      end: 1.0,
+    ).animate(
+      CurvedAnimation(
+        parent: controller,
+        curve: const Interval(
+          0.0, 1.0, //间隔，前60%的动画时间
+          curve: Curves.decelerate,
+        ),
+      ),
+    );
+    controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        controller.reverse();
+      } else if (status == AnimationStatus.dismissed) {
+        controller.forward();
+      }
+    });
+    controller.forward();
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: animation,
+      child: AlarmWidget(
+          width: MediaQuery.of(context).size.width,
+          height: MediaQuery.of(context).size.height),
+    );
+  }
+}
+
+class AlarmWidget extends StatelessWidget {
+  const AlarmWidget({
+    super.key,
+    required this.width,
+    required this.height,
+  });
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(children: [
+      Positioned(
+          top: 0,
+          child: Container(
+              decoration: const BoxDecoration(
+                shape: BoxShape.rectangle,
+                gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: colors),
+              ),
+              width: width,
+              height: borderHeight)),
+      Positioned(
+          bottom: 0,
+          child: Container(
+              decoration: const BoxDecoration(
+                shape: BoxShape.rectangle,
+                gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: colors),
+              ),
+              width: width,
+              height: borderHeight)),
+      Positioned(
+          left: 0,
+          child: Container(
+              decoration: const BoxDecoration(
+                shape: BoxShape.rectangle,
+                gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: colors),
+              ),
+              width: borderWidth,
+              height: height)),
+      Positioned(
+          right: 0,
+          child: Container(
+              decoration: const BoxDecoration(
+                shape: BoxShape.rectangle,
+                gradient: LinearGradient(
+                    begin: Alignment.centerRight,
+                    end: Alignment.centerLeft,
+                    colors: colors),
+              ),
+              width: borderWidth,
+              height: height)),
+    ]);
+  }
+}
